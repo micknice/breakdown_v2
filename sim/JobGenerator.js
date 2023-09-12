@@ -16,7 +16,7 @@ class JobGenerator {
        
     }
 
-    async rollForNewJob() {
+    rollForNewJob = async() => {
         console.log('rolling for new job')
         const prob = (this.projectedJobCountForDuration / this.simDurationHours) / 60;
         const roll = Math.random();
@@ -26,7 +26,7 @@ class JobGenerator {
         }
     }
 
-    async sendBreakdownToQueue(breakdown) {
+    sendBreakdownToQueue = (breakdown) => {
         console.log('sending to queue')
         return new Promise((resolve, reject) => {
             breakdownToQueue(breakdown, (err) => {
@@ -39,7 +39,7 @@ class JobGenerator {
         });
     }
 
-    async startGenerating() {
+    startGenerating = async() => {
         this.interval = setInterval(async () => {
             // actions for each iteration
             await this.rollForNewJob();
@@ -53,7 +53,7 @@ class JobGenerator {
         }, 10000);
     }
 
-    createNewBreakdown() {
+    createNewBreakdown = () => {
         console.log('creatingnew breakdown')
         const randomId = Math.floor(Math.random() * 1999);
         console.log(`LOGGING NEW BREAKDOWN: mbr id: ${randomId}`);

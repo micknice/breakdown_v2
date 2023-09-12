@@ -1,11 +1,12 @@
 const Patrol = require('./Patrol')
+const ClockStore = require('../../ClockStore/ClockStore')
 
 class PatrolPool {
-    constructor(patrolCount) {
-        
+    constructor(patrolCount, iterationDuration) {
         this.patrolCount = patrolCount
         this.patrols = {}
         this.init = this.initializePatrols()
+        this.patrolSync()
 
     }
 
@@ -19,17 +20,21 @@ class PatrolPool {
         }
     }
 
-    getFreePatrolIdsAndCoords() {
-        // console.log('this.patrols', this.patrols, 'this.patrols')
-
+    getFreePatrolIdsAndCoords = () => {
         const freePatrols = Object.values(this.patrols).filter(patrol => !patrol.onJob).map(patrol => ({
             patrolId: patrol.patrolId,
             currentLocation: patrol.currentLocation
         }));
-        // console.log('!!!!', freePatrols, '!!!!')
-        //   console.log(freePatrols, 'freePAt @  get')
           return freePatrols
           
+    }
+    patrolSync = () => {
+        setInterval(() => {
+            for (const patrol in this.patrols) {
+                this.patrols[patrol].updatePatrol()
+            }
+
+        }, 1000)
     }
 }
 

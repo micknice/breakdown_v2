@@ -39,20 +39,17 @@ class Patrol {
                 channel.consume(queue, (msg) => {
                   console.log(" [x] Received %s", msg.content.toString());
                     const jsonObj =  JSON.parse(msg.content)
-                    this.onJob = true
                     this.assignedJob = jsonObj.breakdown
                     this.assignedJobLoc = jsonObj.breakdown.coordinates
                     this.routePath = jsonObj.route.routePath
                     this.travelTimeActualMins = jsonObj.route.etaWithTraffic / 60
+                    this.onJob = true
                     console.log(`patrol:${patrolId} recieved and accepted job no.${jsonObj.breakdown.jobId}`)
                 }, {
                     noAck: true
                 });
             });
         });
-  
-      
-        
     }
   
     initSpawnLocation = async() => {
@@ -71,7 +68,7 @@ class Patrol {
   
     
 
-    logLocData() {
+    logLocData = () => {
       const jsonData = {
         patrolId: this.patrolId,
         spawnLocationDetails: this.spawnLocationDetails,
@@ -90,8 +87,8 @@ class Patrol {
   
     
   
-    updateLocation(newCoords) {
-      this.currentLocation = newCoords;
+    updatePatrol = () => {
+      // logic for every iteration cycle here
     }
   }
 

@@ -20,34 +20,64 @@ class Allocation {
         this.jobMap = new Map();
         this.completedJobMap = new Map();
         this.stopNext = false;
-        this.recieve = amqp.connect('amqp://localhost', (error0, connection) => {
-            if (error0) {
-                throw error0;
-            }
-            connection.createChannel((error1, channel) => {
-                if (error1) {
-                    throw error1;
-                }
-        
-                var queue = 'Breakdowns';
-        
-                channel.assertQueue(queue, {
-                    durable: false
-                });
-        
-                // console.log(" [*] Waiting for messages in %s. To exit press CTRL+C", queue);
-        
-                channel.consume(queue, async(msg) => {
-                  console.log(" [x] Received %s", msg.content.toString());
-                    const jsonObj =  JSON.parse(msg.content)
-                    await this.logNewBreakdown(jsonObj)
-                    await this.assignFreeToQueued()
-                }, {
-                    noAck: true
-                });
-            });
-        });
+        this.setupQueues()
     }
+
+    setupQueues() {
+      amqp.connect('amqp://localhost', (error0, connection) => {
+        if (error0) {
+          throw error0;
+        }
+        
+        // this.BreakdownsConsumer
+          connection.createChannel((error1, channel) => {
+              if (error1) {
+                  throw error1;
+              }
+
+              var queue = 'Breakdowns';
+
+              channel.assertQueue(queue, {
+                  durable: false
+              });
+
+              channel.consume(queue, async (msg) => {
+                  console.log(" [x] Received %s", msg.content.toString());
+                  const jsonObj = JSON.parse(msg.content);
+                  await this.logNewBreakdown(jsonObj);
+                  await this.assignFreeToQueued();
+              }, {
+                  noAck: true
+              });
+
+              this.BreakdownsConsumer = channel;
+          });
+          // this.PatrolPingsConsumer
+          connection.createChannel((error2, channel2) => {
+
+              if (error2) {
+                  throw error2;
+              }
+
+              var queue2 = 'PatrolPings';
+
+              channel2.assertQueue(queue2, {
+                  durable: false
+              });
+
+              channel2.consume(queue2, async (msg) => {
+                  // Handle messages from the second queue
+                  console.log(" [x] Received from second queue: %s", msg.content.toString());
+                  // Handle messages from this queue as needed
+              }, {
+                  noAck: true
+              });
+
+              // Save the second channel for the "OtherQueueName" queue for future use
+              this.PatrolPingsConsumer = channel2;
+          });
+      });
+  }
    
 
     
@@ -80,7 +110,7 @@ class Allocation {
     //   return patrolData;
     // }
 
-    async logNewBreakdown(breakdown) {
+    logNewBreakdown = (breakdown) => {
       console.log('logging new breakdown')
       const newBreakdown = new BreakdownLog(
         this.jobCount,
@@ -147,9 +177,8 @@ class Allocation {
                     }
                 });
                 const breakdownAndRoute = {breakdown: activeJob, route: finalClosestPatrol}
-
                 breakdownToPatrol(breakdownAndRoute)
-                // now do the assignment logic
+                value.patrolAssigned = true
 
               }     
             }     

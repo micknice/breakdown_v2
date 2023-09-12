@@ -5,7 +5,7 @@ require('dotenv').config({
 });
 const axios = require('axios');
 
-function getLatandLongByQuery(address, postCode) {
+const getLatandLongByQuery = (address, postCode) => {
     const apiKey = process.env.BING_MAPS_API_KEY;
     return new Promise((resolve, reject) => {
       axios.get(`http://dev.virtualearth.net/REST/v1/Locations?countryRegion=uk&postalCode=${postCode}&addressLine=${address}&key=${apiKey}`)
@@ -20,7 +20,7 @@ function getLatandLongByQuery(address, postCode) {
     });
   }
 
-  getDistanceAndTime = async(jobLoc, patrolLoc, patrolId) => {
+  const getDistanceAndTime = (jobLoc, patrolLoc, patrolId) => {
     const apiKey = process.env.BING_MAPS_API_KEY;
     return new Promise((resolve, reject) => {
       axios.get(`http://dev.virtualearth.net/REST/v1/Routes?wayPoint.1=${patrolLoc}&wayPoint.2=${jobLoc}&optimize=time&routeAttributes=excludeItinerary,routePath&maxSolutions=1&distanceUnit=Mile&key=${apiKey}`)
@@ -43,7 +43,7 @@ function getLatandLongByQuery(address, postCode) {
     });
   }
   
-  function checkValidMainlandLocation(lat, long) {
+  const checkValidMainlandLocation = (lat, long) => {
     const latLong = `${lat},${long}`
     const apiKey = process.env.BING_MAPS_API_KEY;
     return new Promise((resolve, reject) => {

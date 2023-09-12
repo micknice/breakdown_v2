@@ -14,7 +14,7 @@ const getMemberDetailsById = (id) => {
     })
 }
 
-const getPatrolSpawnById = async (id) => {
+const getPatrolSpawnById = (id) => {
     return db.query(
         `SELECT * FROM patrol_spawns
         WHERE address_id = $1`, [id]

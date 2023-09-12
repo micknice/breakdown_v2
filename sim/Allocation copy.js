@@ -5,13 +5,18 @@ const {getMemberDetailsById} = require('../db/model')
 // const {getLatandLongByQuery, getDistanceAndTime} = require('../api/api')
 const fs = require('fs')
 const amqp = require('amqplib/callback_api');
+const PatrolPool = require('./Patrol/PatrolPool');
+const { getDistanceAndTime } = require('../api/api');
+const { breakdownToPatrol } = require('../rabbitmq/send')
+
 
 class Allocation {
-    constructor() {
+    constructor(patrolCount) {
         this.currentTime = new Date();
         this.currentTime.setHours(0, 0, 0, 0); // set the initial time to 00:00:00  
-        this.patrols = {};        
+        this.patrolPool = new PatrolPool(patrolCount);        
         this.jobCount = 0;
+        this.freePatrolIds = []
         this.jobMap = new Map();
         this.completedJobMap = new Map();
         this.stopNext = false;
@@ -30,38 +35,79 @@ class Allocation {
                     durable: false
                 });
         
-                console.log(" [*] Waiting for messages in %s. To exit press CTRL+C", queue);
+                // console.log(" [*] Waiting for messages in %s. To exit press CTRL+C", queue);
         
-                channel.consume(queue, (msg) => {
+                channel.consume(queue, async(msg) => {
                   console.log(" [x] Received %s", msg.content.toString());
                     const jsonObj =  JSON.parse(msg.content)
-                    // const breakdown = new Breakdown(
-                    //   jsonObj.jobId,
-                    //   jsonObj.memberId,
-                    //   jsonObj.address,
-                    //   jsonObj.postcode,
-                    //   jsonObj.latitude,
-                    //   jsonObj.longitude
-                    // )
-                    // console.log('breakdown!!!!', breakdown)
-
-                    this.logNewBreakdown(jsonObj)
+                    await this.logNewBreakdown(jsonObj)
+                    await this.assignFreeToQueued()
                 }, {
                     noAck: true
                 });
             });
         });
-        
     }
+
+    setupQueues() {
+      amqp.connect('amqp://localhost', (error0, connection) => {
+          if (error0) {
+              throw error0;
+          }
+
+          // Create the main channel for the "Breakdowns" queue
+          connection.createChannel((error1, channel) => {
+              if (error1) {
+                  throw error1;
+              }
+
+              var queue = 'Breakdowns';
+
+              channel.assertQueue(queue, {
+                  durable: false
+              });
+
+              channel.consume(queue, async (msg) => {
+                  console.log(" [x] Received %s", msg.content.toString());
+                  const jsonObj = JSON.parse(msg.content);
+                  await this.logNewBreakdown(jsonObj);
+                  await this.assignFreeToQueued();
+              }, {
+                  noAck: true
+              });
+
+              // Save the main channel for the "Breakdowns" queue for future use
+              this.BreakdownsConsumer = channel;
+          });
+
+          // Create additional channels for other queues
+          connection.createChannel((error2, channel2) => {
+              if (error2) {
+                  throw error2;
+              }
+
+              var queue2 = 'PatrolPings';
+
+              channel2.assertQueue(queue2, {
+                  durable: false
+              });
+
+              channel2.consume(queue2, async (msg) => {
+                  // Handle messages from the second queue
+                  console.log(" [x] Received from second queue: %s", msg.content.toString());
+                  // Handle messages from this queue as needed
+              }, {
+                  noAck: true
+              });
+
+              // Save the second channel for the "OtherQueueName" queue for future use
+              this.PatrolPingsConsumer = channel2;
+          });
+      });
+  }
    
 
-    // initializePatrols() {
-    //     for (let i = 0; i < this.patrolCount; i++) {
-    //         const patrolId = `patrol${i}`
-    //         const newPatrol = new Patrol(patrolId)
-    //         this.patrols[patrolId] = newPatrol            
-    //     }
-    // }
+    
 
     // getPatrolCoordsForGUI() {
     //   const patrolData = [];
@@ -92,6 +138,7 @@ class Allocation {
     // }
 
     async logNewBreakdown(breakdown) {
+      console.log('logging new breakdown')
       const newBreakdown = new BreakdownLog(
         this.jobCount,
         breakdown,
@@ -99,9 +146,7 @@ class Allocation {
 
       this.jobMap.set(this.jobCount, newBreakdown);
       const setJob = this.jobMap.get(this.jobCount);
-      console.log('setJob', setJob)
       this.jobCount += 1;
-      console.log(this.jobCount)
     }
       // getAllJobsWithNoAssignedPatrol() {
       //   const unassignedJobsArr = []
@@ -134,7 +179,39 @@ class Allocation {
     //     return jobLocsArr
     //   }
 
+    
 
+      assignFreeToQueued = async() => {
+        console.log('ASSIGNING PATROLS');
+        this.jobMap.forEach(async(value, key) => {
+            const activeJob = value;
+            const jobLoc = `${value.latitude},${value.longitude}`;     
+            if (!value.patrolAssigned  && !value.jobCompleted) {    
+              const freePatrollArr = this.patrolPool.getFreePatrolIdsAndCoords()
+              if (freePatrollArr.length > 0) {
+                // console.log('freepatrolarry @ assign', freePatrollArr)
+                const distanceAndTimeArray = []
+                for (const patrol of freePatrollArr) {
+                  const patrolLoc = `${patrol.currentLocation.latitude},${patrol.currentLocation.longitude}`
+                  const distanceAndTime = await getDistanceAndTime(jobLoc, patrolLoc, patrol.patrolId)
+                  distanceAndTimeArray.push(distanceAndTime)
+                }
+                // get closest patrol
+                let finalClosestPatrol = null
+                distanceAndTimeArray.forEach((patrol) => {
+                    if (finalClosestPatrol === null || patrol.distance < finalClosestPatrol.distance) {
+                        finalClosestPatrol = patrol;
+                    }
+                });
+                const breakdownAndRoute = {breakdown: activeJob, route: finalClosestPatrol}
+
+                breakdownToPatrol(breakdownAndRoute)
+                // now do the assignment logic
+
+              }     
+            }     
+        });
+    }
       async assignFreePatrolsToQueued() {
         console.log('ASSIGNING PATROLS');
         // loop through jobs map and check for patrolAssigned
@@ -215,217 +292,10 @@ class Allocation {
         });
     }
 
-    // logAssignedJobToJson(finalClosestPatrol, activeJob, routeInterval) {
-    //   const filePath = `./logs/${finalClosestPatrol.patrolId}.json`;
-    //   try {
-    //     const jsonString = fs.readFileSync(filePath, 'utf8');
-    //     const jsonObj = JSON.parse(jsonString);
-    //     //if first job of sim
-    //     if (jsonObj.hasOwnProperty('assignedJobs')) {
-    //       const keysArr = Object.keys(jsonObj.assignedJobs)
-    //       const jobLogNum = `job${keysArr.length +1}`;
-    //       jsonObj.assignedJobs[jobLogNum] = {};
-    //       jsonObj.assignedJobs[jobLogNum].jobId = activeJob.jobId;
-    //       jsonObj.assignedJobs[jobLogNum].assignedJobLoc = activeJob.coordinates;
-    //       jsonObj.assignedJobs[jobLogNum].routePath = finalClosestPatrol.routePath;
-    //       jsonObj.assignedJobs[jobLogNum].routeInterval = routeInterval
-    //       jsonObj.assignedJobs[jobLogNum].assignedSimIteration = this.iteration;
-        
-    //     // any job after first assigned job
-    //     } else {
-    //       const jobLogNum = 'job1';
-    //       jsonObj.assignedJobs = {};
-    //       jsonObj.assignedJobs[jobLogNum] = {};
-    //       jsonObj.assignedJobs[jobLogNum].jobId = activeJob.jobId;
-    //       jsonObj.assignedJobs[jobLogNum].assignedJobLoc = activeJob.coordinates;
-    //       jsonObj.assignedJobs[jobLogNum].routePath = finalClosestPatrol.routePath;
-    //       jsonObj.assignedJobs[jobLogNum].routeInterval = routeInterval
-    //       jsonObj.assignedJobs[jobLogNum].assignedSimIteration = this.iteration;
-    //       jsonObj.pingsArr = [jsonObj.currentLoc];
-
-    //     }
-    //     const jsonWriteString = JSON.stringify(jsonObj, null, 2);
-    //     fs.writeFile(filePath, jsonWriteString, (err) => {
-    //       if (err) {
-    //         console.error('log assign job error:', err);
-    //       } else {
-    //         console.log('JSON data has been written to the file successfully.');
-    //       }
-    //     });
-
-
-    //   } catch (err) {
-    //     console.log('error logging assigned job to json', err.message)
-    //   }
-
-    // }
-    // logPingsToJson(patrolForUpdate, newLoc, currentRouteIndex, routePathLength) {
-    //   console.log(newLoc)
-    //   const filePath = `./logs/${patrolForUpdate.patrolId}.json`;
-    //   try {
-    //     const jsonString = fs.readFileSync(filePath, 'utf8');
-    //     const jsonObj = JSON.parse(jsonString);        
-    //     jsonObj.pingsArr.push(newLoc, patrolForUpdate.onJob, currentRouteIndex, routePathLength)       
-    //     const jsonWriteString = JSON.stringify(jsonObj, null, 2);
-    //     fs.writeFile(filePath, jsonWriteString, (err) => {
-    //       if (err) {
-    //         console.error('Error writing JSON file:', err);
-    //       } else {
-    //         console.log('JSON data has been written to the file successfully.');
-    //       }
-    //     });
-
-    //   } catch (err) {
-    //     console.log('log ping error', err.message)
-    //   }
-
-    // }
-
-    // completeJobsAndDeassignPatrols() {
-    //   this.jobMap.forEach((value, key) => {
-    //     const activeJob = {...this.jobMap.get(value.jobId)};
-    //     if (activeJob.patrolAssigned && this.currentTime > activeJob.completionTime) {
-    //       console.log('complete jobs activeJobId and currentLoc', activeJob.jobId, activeJob.coordinates)
-    //       console.log('COMPLETING AND DEASSIGNING')
-    //       activeJob.jobCompleted = true;
-    //       this.completedJobMap.set(activeJob.jobId, activeJob)
-    //       this.patrols[activeJob.patrolId].onJob = false;
-    //       this.patrols[activeJob.patrolId].assignedJob = null;
-    //       this.patrols[activeJob.patrolId].assignedJobLoc = null;
-    //       this.patrols[activeJob.patrolId].routePath = null;
-    //       this.patrols[activeJob.patrolId].travelTimeActualMins = null;
-    //       this.patrols[activeJob.patrolId].routeInterval = null;
-    //       this.patrols[activeJob.patrolId].assignedSimIteration = null;
-    //       this.patrols[activeJob.patrolId].currentRouteIndex = 0;
-    //       this.patrols[activeJob.patrolId].currentLocation = activeJob.coordinates;
-    //       console.log('this.patrols[activeJob.patrolId].currentLocation', this.patrols[activeJob.patrolId].currentLocation)
-    //       this.jobMap.delete(value.jobId)
-    //     }
-    //   })
-    // }
-
-
     
-    // updateActivePatrolsLocation() {
-    //   console.log('UPDATING PATROL LOCATIONS')
-    //   for (const patrol in this.patrols) {
-    //     if (this.patrols[patrol].onJob && 
-    //     this.iteration > this.patrols[patrol].assignedSimIteration && 
-    //     this.patrols[patrol].currentLocation[0] !== this.patrols[patrol].assignedJobLoc[0] && 
-    //     this.patrols[patrol].currentLocation[1] !== this.patrols[patrol].assignedJobLoc[1]) {
-    //       if (this.patrols[patrol].currentRouteIndex + this.patrols[patrol].routeInterval < this.patrols[patrol].routePath.length) {
-    //         this.patrols[patrol].currentRouteIndex += this.patrols[patrol].routeInterval;
-    //         this.patrols[patrol].currentLocation = this.patrols[patrol].routePath[this.patrols[patrol].currentRouteIndex];
-    //         this.logPingsToJson(this.patrols[patrol], this.patrols[patrol].currentLocation, this.patrols[patrol].currentRouteIndex, this.patrols[patrol].routePath.length);
-    //       } else {
-    //         this.patrols[patrol].currentRouteIndex = this.patrols[patrol].routePath.length - 1;
-    //         this.patrols[patrol].currentLocation = this.patrols[patrol].assignedJobLoc;
-    //         this.logPingsToJson(this.patrols[patrol], this.patrols[patrol].currentLocation, this.patrols[patrol].currentRouteIndex, this.patrols[patrol].routePath.length);
-    //       }
-    //     }
-    //   }
-    // }
-
-    // rollForFixTimeInMinutes() {
-    //   const fixTime = Math.random() * (60 - 10) + 10;
-    //   return fixTime
-    // }
-
-    // rollForTravelTimeInMinutes(eta, etaWithTraffic) {
-    //   const travelTime = Math.random() * (etaWithTraffic - eta) + eta
-    //   return travelTime /60
-    // }   
-    
-    
-    // getRouteInterval(travelTimeActualMins, routePathArrLength) {
-    //   const intervalMins = travelTimeActualMins / 5;
-    //   const arrInterval = Math.floor(routePathArrLength / intervalMins)
-    //   return arrInterval;
-    // }
-
-    // addSeconds(date, seconds) {
-    //   const dateCopy = new Date(date);
-    //   dateCopy.setSeconds(date.getSeconds() + seconds);    
-    //   return dateCopy;
-    // }
-
-    // getUnassignedPatrols() {
-    //   let count = 0;
-    //   for (const [key, value] of Object.entries(this.patrols)) {
-    //     if (value.onJob === false) {
-    //       count += 1;
-    //     }
-    //   }
-    //   return count;
-    // }
-
-    // getAssignedPatrols() {
-    //   let count = 0;
-    //   for (const [key, value] of Object.entries(this.patrols)) {
-    //     if (value.onJob === true) {
-    //       count += 1;
-    //     }
-    //   }
-    //   return count;
-    // }
-
-    // getIterationSummary() {
-    //   const iterationSummary = new IterationSummary(
-    //     this.iteration, 
-    //     this.currentTime, 
-    //     this.jobCount, 
-    //     this.completedJobMap.size, 
-    //     this.jobMap.size, 
-    //     this.getAssignedPatrols(), 
-    //     this.getUnassignedPatrols()
-    //     )
-    //     return iterationSummary
-    // }
-
-    
- 
-    // startSimulation() {
-      
-    //   this.interval = setInterval(async () => {
-    //     // actions for each iteration 
-    //     const hours = this.currentTime.getHours().toString().padStart(2, '0');
-    //     const minutes = this.currentTime.getMinutes().toString().padStart(2, '0');
-    //     const seconds = this.currentTime.getSeconds().toString().padStart(2, '0');
-    //     this.updateActivePatrolsLocation();
-    //     await this.rollForNewJob()
-    //     await this.assignFreePatrolsToQueued();
-    //     await this.completeJobsAndDeassignPatrols();
-
-    //     const iterationSummary = new IterationSummary(this.iteration, this.currentTime, this.jobCount, this.completedJobMap.size, this.jobMap.size, this.getAssignedPatrols(), this.getUnassignedPatrols())
-    //     console.log(iterationSummary);
-    //     // increment iteration and time
-    //     this.iteration++;
-    //     this.currentTime.setTime(this.currentTime.getTime() + this.iterationDuration);
-        
-  
-  
-    //     if (this.iteration > this.numIterations) {
-    //       this.stopSimulation();
-    //       console.log('Simulation complete');
-    //     }
-    //   }, 5000); 
-    // }
-
-
-  
-    // stopSimulation() {
-    //   // console.log('patrolount @ stopSim', this.patrolCount)
-    //   console.log('iteration @ stopSim', this.iteration)
-    //   console.log('!!!', this.interval)
-    //   clearInterval(this.interval);
-    // }
-
-    // forceStop() {
-
-    // }
   }
   
-const allocation = new Allocation()
+const allocation = new Allocation(5)
 
 
   
