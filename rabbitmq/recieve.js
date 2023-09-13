@@ -1,5 +1,3 @@
-#!/usr/bin/env node
-
 var amqp = require('amqplib/callback_api');
 const Breakdown = require('../sim/Breakdown/Breakdown')
 
@@ -50,7 +48,7 @@ const consumeBreakdownAndRoute = () => {
                         throw error1;
                     }
             
-                    var queue = 'Breakdowns';
+                    const queue = 'Breakdowns';
             
                     channel.assertQueue(queue, {
                         durable: false

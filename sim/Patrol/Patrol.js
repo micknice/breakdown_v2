@@ -71,10 +71,6 @@ class Patrol {
         }
       }
 
-    
-  
-    
-
     // logLocData = () => {
     //   const jsonData = {
     //     patrolId: this.patrolId,
@@ -91,8 +87,6 @@ class Patrol {
     //     }
     //   });
     // }
-  
-    
   
     updatePatrol = () => {
       this.iteration += 1
