@@ -1,11 +1,11 @@
 const Patrol = require('./Patrol')
-const ClockStore = require('../../ClockStore/ClockStore')
 
 class PatrolPool {
     constructor(patrolCount, iterationDuration) {
         this.patrolCount = patrolCount
         this.patrols = {}
         this.init = this.initializePatrols()
+        this.iteration = 0
         this.patrolSync()
 
     }
@@ -34,7 +34,7 @@ class PatrolPool {
                 this.patrols[patrol].updatePatrol()
             }
 
-        }, 1000)
+        }, 500)
     }
 }
 

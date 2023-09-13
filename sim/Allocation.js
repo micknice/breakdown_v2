@@ -267,7 +267,7 @@ class Allocation {
     
   }
   
-const allocation = new Allocation(5)
+const allocation = new Allocation(1)
 
 
   

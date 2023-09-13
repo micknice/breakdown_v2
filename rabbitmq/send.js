@@ -43,7 +43,7 @@ const breakdownToPatrol = (breakdownAndRoute) => {
                 throw error1;
             }
             const jsonStr = JSON.stringify(breakdownAndRoute);
-            console.log('jsonStr', jsonStr)
+            // console.log('jsonStr', jsonStr)
             const queue = `BreakdownToPatrol:${breakdownAndRoute.route.patrolId}`
     
             channel.assertQueue(queue, {

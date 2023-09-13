@@ -60,7 +60,13 @@ class JobGenerator {
 
         getMemberDetailsById(randomId)
         .then((member) => {
-            if (member) {
+            if (member && 
+                member.address_id && 
+                member.address && 
+                member.postcode && 
+                member.latitude && 
+                member.longitude
+                ) {
                 if (this.jobMap.has(randomId)) {
                     console.log(`Job in with memberID: ${randomId} - Re-rolling!!!`);
                     this.createNewBreakdown();
