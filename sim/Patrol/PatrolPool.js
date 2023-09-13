@@ -6,6 +6,7 @@ class PatrolPool {
         this.patrols = {}
         this.init = this.initializePatrols()
         this.iteration = 0
+        this.iterationDuration = 1000 / iterationDuration
         this.patrolSync()
 
     }
@@ -34,7 +35,7 @@ class PatrolPool {
                 this.patrols[patrol].updatePatrol()
             }
 
-        }, 500)
+        }, this.iterationDuration)
     }
 }
 

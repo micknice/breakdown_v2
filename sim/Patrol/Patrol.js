@@ -5,9 +5,10 @@ var amqp = require('amqplib/callback_api');
 
 
 class Patrol {
-    constructor(patrolId, onJob = false) {
+    constructor(patrolId, onJob = false, iterationDuration) {
       this.patrolId = patrolId;
       this.onJob = onJob;
+      this.iterationDuration
       this.assignedJob = null;
       this.assignedJobLoc = null;
       this.assignedIteration = 0
@@ -21,6 +22,9 @@ class Patrol {
       this.currentRouteIndex = 0;
       this.init = this.initSpawnLocation()
       this.iteration = 1
+      this.fixInProgress = false
+      this.iterationsUntilArrival
+      this.iterationsUntilFixed = 0
       this.recieve = amqp.connect('amqp://localhost', (error0, connection) => {
             if (error0) {
                 throw error0;
@@ -48,6 +52,7 @@ class Patrol {
                     this.routePath = jsonObj.route.routePath
                     this.travelTimeActualMins = jsonObj.route.etaWithTraffic / 60
                     this.routeInterval = Math.floor(this.routePath.length / this.travelTimeActualMins)
+                    this.iterationsUntilArrival = Math.floor(this.routePath.length/this.routeInterval)
                     this.onJob = true
                     console.log(`patrol:${patrolId} recieved and accepted job no.${jsonObj.breakdown.jobId}`)
                 }, {
@@ -91,6 +96,13 @@ class Patrol {
     updatePatrol = () => {
       this.iteration += 1
       console.log('!!!!!!!------', this.currentLocation)
+      // handle job finished
+      if(this.fixInProgress && this.iterationsUntilFixed === 0) {
+        this.completeJob()
+      } else if (this.fixInProgress && this.iterationsUntilFixed > 0){ 
+        this.iterationsUntilFixed -= 1
+        console.log('iterations til fixed:', this.iterationsUntilFixed )
+      }
       if(this.onJob && 
         this.iteration > this.assignedIteration && 
         this.currentLocation.latitude !== this.assignedJobLoc[0] && 
@@ -99,16 +111,32 @@ class Patrol {
           // logic for every iteration cycle here
           const routeIndex = (this.iteration - this.assignedIteration) * this.routeInterval
           if (routeIndex < this.routePath.length) {
+            // if en route
             this.currentLocation = this.routePath[routeIndex]
-          } else {
-            this.currentLocation = this.routePath[this.routePath.length - 1]
+            this.iterationsUntilArrival -= 1
+          } else if(!this.fixInProgress) {
+            // if arrived
+              console.log('arrived')
+              this.iterationsUntilArrival = 0
+              this.currentLocation = this.routePath[this.routePath.length - 1]
+              this.fixTimeIterations = this.rollForFixTime()
+              this.fixInProgress = true
           }
           console.log('routeInterval', this.routeInterval)
-          console.log('iterations to arrival', this.routePath.length/this.routeInterval)
+          console.log('iterations to arrival', this.iterationsUntilArrival)
           console.log(`!!! current location patrol ${this.patrolId}`, this.currentLocation, '!!! current location')
-
       }
-      
+    }
+
+    rollForFixTime() {
+      const fixTimeIterations = Math.floor((Math.random() * 60) / this.iterationDuration)
+      return fixTimeIterations
+    }
+
+    completeJob() {
+      console.log(`Patrol: ${this.patrolId} Job: ${this.assignedJob} Complete!!!`)
+
+      // complete job logic next!!!
     }
   }
 

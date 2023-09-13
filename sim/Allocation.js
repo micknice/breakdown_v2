@@ -11,10 +11,10 @@ const { breakdownToPatrol } = require('../rabbitmq/send')
 
 
 class Allocation {
-    constructor(patrolCount) {
+    constructor(patrolCount, iterationDuration = 1) {
         this.currentTime = new Date();
         this.currentTime.setHours(0, 0, 0, 0); // set the initial time to 00:00:00  
-        this.patrolPool = new PatrolPool(patrolCount);        
+        this.patrolPool = new PatrolPool(patrolCount, iterationDuration);        
         this.jobCount = 0;
         this.freePatrolIds = []
         this.jobMap = new Map();
@@ -119,7 +119,7 @@ class Allocation {
     }
   }
   
-const allocation = new Allocation(1)
+const allocation = new Allocation(1, 4)
 
 module.exports = Allocation;
   
